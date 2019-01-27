@@ -53,14 +53,15 @@ class Unet_bn(object):
         self.truth_channels = truth_channels
 
         # placeholders for input x and y
-        self.x = tf.placeholder("float", shape=[None, None, None, img_channels])
-        self.y = tf.placeholder("float", shape=[None, None, None, truth_channels])
+        self.x = tf.placeholder("float", shape=[None, None, None, None, img_channels]) # (batch_size,32,32,32,channel)
+        self.y = tf.placeholder("float", shape=[None, None, None, None, truth_channels])
         self.phase = tf.placeholder(tf.bool, name='phase')
         self.keep_prob = tf.placeholder(tf.float32) #dropout (keep probability)
 
         # reused variables
-        self.nx = tf.shape(self.x)[1]
-        self.ny = tf.shape(self.x)[2]       
+        self.nd = tf.shape(self.x)[1]
+        self.nx = tf.shape(self.x)[2]
+        self.ny = tf.shape(self.x)[3]       
         self.num_examples = tf.shape(self.x)[0]            
 
         # variables need to be calculated
@@ -71,25 +72,21 @@ class Unet_bn(object):
         self.valid_avg_psnr =  self._get_measure('avg_psnr')
 
     def _get_measure(self, measure):
-        total_pixels = self.nx * self.ny * self.truth_channels
+        total_pixels = self.nd * self.nx * self.ny * self.truth_channels # 32*32*32*1 = 32768
         dtype       = self.x.dtype
         flat_recons = tf.reshape(self.recons, [-1, total_pixels])
         flat_truths = tf.reshape(self.y, [-1, total_pixels])
-
+        
+        
+        mse = mse_array(flat_recons, flat_truths, total_pixels)
+        term1 = log(tf.constant(1, dtype), 10.)
+        term2 = log(mse, 10.)
+        psnr = tf.scalar_mul(20., term1) - tf.scalar_mul(10., term2)
+        
         if measure == 'psnr':
-            # mse are of the same length of the truths
-            mse = mse_array(flat_recons, flat_truths, total_pixels)
-            term1 = log(tf.constant(1, dtype), 10.)
-            term2 = log(mse, 10.)
-            psnr = tf.scalar_mul(20., term1) - tf.scalar_mul(10., term2)
             result = psnr
 
         elif measure == 'avg_psnr':
-            # mse are of the same length of the truths
-            mse = mse_array(flat_recons, flat_truths, total_pixels)
-            term1 = log(tf.constant(1, dtype), 10.)
-            term2 = log(mse, 10.)
-            psnr = tf.scalar_mul(20., term1) - tf.scalar_mul(10., term2)
             avg_psnr = tf.reduce_mean(psnr)
             result = avg_psnr
 
@@ -104,7 +101,7 @@ class Unet_bn(object):
 
         """
 
-        total_pixels = self.nx * self.ny * self.truth_channels
+        total_pixels = self.nx * self.ny * self.nd * self.truth_channels
         flat_recons = tf.reshape(self.recons, [-1, total_pixels])
         flat_truths = tf.reshape(self.y, [-1, total_pixels])
         if cost_name == "mean_squared_error":

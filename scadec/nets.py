@@ -1,5 +1,5 @@
 from __future__ import print_function, division, absolute_import, unicode_literals
-
+import sys
 import os
 import shutil
 import numpy as np
@@ -13,58 +13,60 @@ from scadec import util
 from scadec.layers import *
 
 
-def unet_decoder(x, keep_prob, phase, img_channels, truth_channels, layers=3, conv_times=3, features_root=16, filter_size=3, pool_size=2, summaries=True):
+
+def unet_decoder(x, keep_prob, phase, img_channels, truth_channels, layers=3, conv_times=3, features_root=16, filter_size=3, pool_size=2, summaries=False):
     """
     Creates a new convolutional unet for the given parametrization.
     
-    :param x: input tensor, shape [?,nx,ny,img_channels]
+    :param x: input tensor, shape [N, nd, nx, ny, img_channels]
     :param keep_prob: dropout probability tensor
     :param img_channels: number of channels in the input image
     :param layers: number of layers in the net
-    :param features_root: number of features in the first layer
+    :param features_root: number of features in the first layer (features = number of filters = output depth)
     :param filter_size: size of the convolution filter
     :param pool_size: size of the max pooling operation
     :param summaries: Flag if summaries should be created
     """
     
-    logging.info("Layers {layers}, features {features}, filter size {filter_size}x{filter_size}, pool size: {pool_size}x{pool_size}".format(layers=layers,
-                                                                                                           features=features_root,
-                                                                                                           filter_size=filter_size,
-                                                                                                           pool_size=pool_size))
+    logging.info("Layers {layers}, features {features}, filter size {filter_size}x{filter_size}, pool size: {pool_size}x{pool_size}".format(layers=layers, features=features_root, filter_size=filter_size, pool_size=pool_size))
 
+    
     # Placeholder for the input image
-    nx = tf.shape(x)[1]
-    ny = tf.shape(x)[2]
-    x_image = tf.reshape(x, tf.stack([-1,nx,ny,img_channels]))
-    batch_size = tf.shape(x_image)[0]
+    nd = tf.shape(x)[1]
+    nx = tf.shape(x)[2]
+    ny = tf.shape(x)[3]
+    #x_batch = tf.reshape(x, tf.stack([-1,nd,nx,ny,img_channels])) # ()
+    x_batch = x
+    batch_size = tf.shape(x_batch)[0]
 
+    
     pools = OrderedDict()  # pooling layers
     deconvs = OrderedDict()  # deconvolution layer
     dw_h_convs = OrderedDict()  # down-side convs
     up_h_convs = OrderedDict()  # up-side convs
 
     # conv the input image to desired feature maps
-    in_node = conv2d_bn_relu(x_image, filter_size, features_root, keep_prob, phase, 'conv2feature_roots')
+    current_node = conv3d_bn_relu(x_batch, filter_size, features_root, keep_prob, phase, 'conv3feature_roots')
 
     # Down layers
-    for layer in range(0, layers):
+    for layer in range(layers):
         features = 2**layer*features_root
         with tf.variable_scope('down_layer_' + str(layer)):
-            for conv_iter in range(0, conv_times):
+            for conv_iter in range(conv_times):
                 scope = 'conv_bn_relu_{}'.format(conv_iter)
-                conv = conv2d_bn_relu(in_node, filter_size, features, keep_prob, phase, scope)    
-                in_node = conv
+                conv = conv3d_bn_relu(current_node, filter_size, features, keep_prob, phase, scope)    
+                current_node = conv
 
             # store the intermediate result per layer
-            dw_h_convs[layer] = in_node
+            dw_h_convs[layer] = current_node
             
             # down sampling
             if layer < layers-1:
                 with tf.variable_scope('pooling'):
-                    pools[layer] = max_pool(dw_h_convs[layer], pool_size)
-                    in_node = pools[layer]
+                    pools[layer] = max_pool3d(dw_h_convs[layer], pool_size)
+                    current_node = pools[layer]
         
-    in_node = dw_h_convs[layers-1]
+    current_node = dw_h_convs[layers-1]
         
     # Up layers
     for layer in range(layers-2, -1, -1):
@@ -72,23 +74,23 @@ def unet_decoder(x, keep_prob, phase, img_channels, truth_channels, layers=3, co
         with tf.variable_scope('up_layer_' + str(layer)):
             with tf.variable_scope('unsample_concat_layer'):
                 # number of features = lower layer's number of features
-                h_deconv = deconv2d_bn_relu(in_node, filter_size, features//2, pool_size, keep_prob, phase, 'unsample_layer')
+                h_deconv = deconv3d_bn_relu(current_node, filter_size, features//2, pool_size, keep_prob, phase, 'unsample_layer') #2 * upscale
                 h_deconv_concat = concat(dw_h_convs[layer], h_deconv)
                 deconvs[layer] = h_deconv_concat
-                in_node = h_deconv_concat
+                current_node = h_deconv_concat
 
-            for conv_iter in range(0, conv_times):
+            for conv_iter in range(conv_times):
                 scope = 'conv_bn_relu_{}'.format(conv_iter)
-                conv = conv2d_bn_relu(in_node, filter_size, features//2, keep_prob, phase, scope)    
-                in_node = conv            
+                conv = conv3d_bn_relu(current_node, filter_size, features//2, keep_prob, phase, scope)    
+                current_node = conv            
 
-            up_h_convs[layer] = in_node
+            up_h_convs[layer] = current_node
 
-    in_node = up_h_convs[0]
+    current_node = up_h_convs[0]
 
     # Output with residual
     with tf.variable_scope("conv2d_1by1"):
-        output = conv2d(in_node, 1, truth_channels, keep_prob, 'conv2truth_channels')
+        output = conv3d(current_node, 1, truth_channels, keep_prob, 'conv2truth_channels')
         up_h_convs["out"] = output
     
     if summaries:

@@ -48,12 +48,23 @@ def mse_array(array_x, array_y, size):
 
 def conv2d_bn_relu(x, w_size, num_outputs, keep_prob_, phase, scope): # output size should be the same.
     conv_2d = tf.contrib.layers.conv2d(x, num_outputs, w_size,
-                                        activation_fn=tf.nn.relu,   # elu is an alternative
+                                        activation_fn=tf.nn.relu,   
                                         normalizer_fn=tf.layers.batch_normalization,
                                         normalizer_params={'training': phase},
                                         scope=scope)
 
     return tf.nn.dropout(conv_2d, keep_prob_)
+
+
+def conv3d_bn_relu(x, kernel_size, num_outputs, keep_prob_, phase, scope): # output size should be the same.
+    conv_3d = tf.contrib.layers.conv3d(x, num_outputs, kernel_size,
+                                        activation_fn=tf.nn.relu,   
+                                        normalizer_fn=tf.layers.batch_normalization,
+                                        normalizer_params={'training': phase},
+                                        scope=scope)
+
+    return tf.nn.dropout(conv_3d, keep_prob_)
+
 
 def deconv2d_bn_relu(x, w_size, num_outputs, stride, keep_prob_, phase, scope):
     conv_2d = tf.contrib.layers.conv2d_transpose(x, num_outputs, w_size,
@@ -65,6 +76,17 @@ def deconv2d_bn_relu(x, w_size, num_outputs, stride, keep_prob_, phase, scope):
 
     return tf.nn.dropout(conv_2d, keep_prob_)
 
+def deconv3d_bn_relu(x, filter_size, num_outputs, stride, keep_prob_, phase, scope): # 2 * upscale
+    conv_3d = tf.contrib.layers.conv3d_transpose(x, num_outputs, filter_size,
+                                                stride=stride,
+                                                activation_fn=tf.nn.relu,   # elu is an alternative
+                                                normalizer_fn=tf.layers.batch_normalization,
+                                                normalizer_params={'training': phase},
+                                                scope=scope)
+
+    return tf.nn.dropout(conv_3d, keep_prob_)
+
+
 def conv2d_bn(x, w_size, num_outputs, keep_prob_, phase, scope):
     conv_2d = tf.contrib.layers.conv2d(x, num_outputs, w_size,
                                         activation_fn=None,
@@ -73,15 +95,27 @@ def conv2d_bn(x, w_size, num_outputs, keep_prob_, phase, scope):
                                         scope=scope)
     return conv_2d
 
-def conv2d(x, w_size, num_outputs, keep_prob_, scope):
-    conv_2d = tf.contrib.layers.conv2d(x, num_outputs, w_size,
+def conv2d(x, filter_size, num_outputs, keep_prob_, scope):
+    conv_2d = tf.contrib.layers.conv2d(x, num_outputs, filter_size,
                                         activation_fn=None,
                                         normalizer_fn=None,
                                         scope=scope)
     return conv_2d
 
+def conv3d(x, filter_size, num_outputs, keep_prob_, scope):
+    conv_3d = tf.contrib.layers.conv3d(x, num_outputs, filter_size,
+                                        activation_fn=None,
+                                        normalizer_fn=None,
+                                        scope=scope)
+    return conv_3d
+
 def max_pool(x,n):
     return tf.nn.max_pool(x, ksize=[1, n, n, 1], strides=[1, n, n, 1], padding='SAME')
 
+
+def max_pool3d(x,n):
+    return tf.nn.max_pool3d(x, ksize=[1, n, n, n, 1], strides=[1, n, n, n, 1], padding='SAME')
+
+
 def concat(x1,x2):
-    return tf.concat([x1, x2], 3)   
+    return tf.concat([x1, x2], 4)   
