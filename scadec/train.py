@@ -163,27 +163,17 @@ class Trainer_bn(object):
 
             for epoch in range(epochs):
                 total_loss = 0
-                # batch_x, batch_y = data_provider(self.batch_size)
-                #print(num_cubes)
-                for num in range(num_cubes):
-                    fix=False
+                
+                for num in range(num_cubes):                    
                     print("Get the {}th cube!!!!!".format(num))
                     all_patches_data = data_provider._get_patch_cube(num, "data") # (batch_size, 32, 32, 32, 1)
                     all_patches_truths = data_provider._get_patch_cube(num, "data")
                     
-                    
                     for itr in range(training_iters_per_cube):
-                        #training_iters_per_cube = num_patches_per_cube / batch_size
-                        #fix=False
-                        #print("start the mini batch!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                        #batch_x, batch_y = data_provider(fix, self.batch_size, itr, num) # (batch_size, 32, 32, 32, 1)
-                        
                         batch_x = all_patches_data[itr * self.batch_size : (itr+1) * self.batch_size]
                         batch_y = all_patches_truths[itr * self.batch_size : (itr+1) * self.batch_size]
-                        print("The {}th batch_x{} in cube {}".format(itr, batch_x.shape, num))
-                        print("The {}th batch_y{} in cube {}".format(itr, batch_y.shape, num))
-                        
-                        
+                        print("Cube{}, {}th batch{} ".format(num, itr, batch_x.shape))
+
                         # Run optimization op (backprop)
                         _, loss, lr, avg_psnr = sess.run([self.optimizer,
                                                         self.net.loss, 
@@ -193,16 +183,16 @@ class Trainer_bn(object):
                                                                     self.net.y: batch_y,   #(N, D, H, W, C)
                                                                     self.net.keep_prob: dropout,
                                                                     self.net.phase: True})
-                    step = itr * num * (epoch+1)
-                    print(step)
-                    if step % display_step == 0:
-                        logging.info("Iter {:} (before training on the batch) Minibatch MSE= {:.4f}, Minibatch Avg PSNR= {:.4f}".format(step, loss, avg_psnr))
-                        self.output_minibatch_stats(sess, summary_writer, step, batch_x, batch_y)
                         
-                    total_loss += loss
+                        step = epoch*num_cubes*training_iters_per_cube + num*training_iters_per_cube + itr
+                        if step % display_step == 0:
+                            logging.info("Iter {:} (Before training on the batch) Minibatch MSE= {:.4f}, Minibatch Avg PSNR= {:.4f}".format(step, loss, avg_psnr))
+                            self.output_minibatch_stats(sess, summary_writer, step, batch_x, batch_y)
+                        
+                        total_loss += loss
 
-                    self.record_summary(summary_writer, 'training_loss', loss, step)
-                    self.record_summary(summary_writer, 'training_avg_psnr', avg_psnr, step)
+                        self.record_summary(summary_writer, 'training_loss', loss, step)
+                        self.record_summary(summary_writer, 'training_avg_psnr', avg_psnr, step)
                     
                     
 
