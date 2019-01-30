@@ -188,7 +188,7 @@ class SimpleDataProvider(BaseDataProvider):
         
         
         for nd in range(num_nd):
-            print(nd)   
+            #print(nd)   
             for nx in range(num_nx):
                 for ny in range(num_ny):
                      #print(zero_padding_data[nd*nd_patch_stride:(nd*nd_patch_stride+nd_patch), nx*nx_patch_stride:(nx*nx_patch_stride+nx_patch), ny*ny_patch_stride:(ny*ny_patch_stride+ny_patch), :].shape)

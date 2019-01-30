@@ -153,8 +153,11 @@ class Trainer_bn(object):
             logging.info("Start optimization")
 
             # select validation dataset
-            fix=True
-            valid_x, valid_y = valid_provider(fix, valid_size, 0, 0)    #(N, D, H, W, C)
+            #fix=True
+            #valid_x, valid_y = valid_provider(fix, valid_size, 0, 0)
+            valid_x = valid_provider._get_patch_cube(0, "data")[0:valid_size,:,:,:,:] #(N, D, H, W, C)
+            valid_y = valid_provider._get_patch_cube(0, "truths")[0:valid_size,:,:,:,:]
+            print(valid_provider._get_patch_cube(0, "data").shape)
             print(valid_x.shape)
             print(valid_y.shape)
             print("1111111111111111111111111111111111111111")
@@ -167,7 +170,7 @@ class Trainer_bn(object):
                 for num in range(num_cubes):                    
                     print("Get the {}th cube!!!!!".format(num))
                     all_patches_data = data_provider._get_patch_cube(num, "data") # (batch_size, 32, 32, 32, 1)
-                    all_patches_truths = data_provider._get_patch_cube(num, "data")
+                    all_patches_truths = data_provider._get_patch_cube(num, "truths")
                     
                     for itr in range(training_iters_per_cube):
                         batch_x = all_patches_data[itr * self.batch_size : (itr+1) * self.batch_size]
@@ -193,12 +196,16 @@ class Trainer_bn(object):
 
                         self.record_summary(summary_writer, 'training_loss', loss, step)
                         self.record_summary(summary_writer, 'training_avg_psnr', avg_psnr, step)
+                        
+                        #test the validation
+                        self.output_epoch_stats(epoch, total_loss, training_iters, lr)
+                        self.output_valstats(sess, summary_writer, step, valid_x, valid_y, "epoch_%s"%epoch, store_img=False)
                     
                     
 
                 # output statistics for epoch
                 self.output_epoch_stats(epoch, total_loss, training_iters, lr)
-                self.output_valstats(sess, summary_writer, step, valid_x, valid_y, "epoch_%s"%epoch, store_img=True)
+                self.output_valstats(sess, summary_writer, step, valid_x, valid_y, "epoch_%s"%epoch, store_img=False)
 
                 if epoch % save_epoch == 0:
                     directory = os.path.join(output_path, "{}_cpkt/".format(step))
