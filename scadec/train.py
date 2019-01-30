@@ -197,12 +197,7 @@ class Trainer_bn(object):
                         self.record_summary(summary_writer, 'training_loss', loss, step)
                         self.record_summary(summary_writer, 'training_avg_psnr', avg_psnr, step)
                         
-                        #test the validation
-                        self.output_epoch_stats(epoch, total_loss, training_iters, lr)
-                        self.output_valstats(sess, summary_writer, step, valid_x, valid_y, "epoch_%s"%epoch, store_img=False)
-                    
-                    
-
+                     
                 # output statistics for epoch
                 self.output_epoch_stats(epoch, total_loss, training_iters, lr)
                 self.output_valstats(sess, summary_writer, step, valid_x, valid_y, "epoch_%s"%epoch, store_img=False)
