@@ -49,7 +49,7 @@ class Trainer_bn(object):
         self.optimizer = optimizer
         self.opt_kwargs = opt_kwargs  
 
-    def _get_optimizer(self, training_iters, global_step):
+    def _get_optimizer(self, training_iters_per_epoch, global_step):
         if self.optimizer == "momentum":
             learning_rate = self.opt_kwargs.pop("learning_rate", 0.2)
             decay_rate = self.opt_kwargs.pop("decay_rate", 0.95)
@@ -57,7 +57,7 @@ class Trainer_bn(object):
             
             self.learning_rate_node = tf.train.exponential_decay(learning_rate=learning_rate, 
                                                         global_step=global_step, 
-                                                        decay_steps=training_iters,  
+                                                        decay_steps=training_iters_per_epoch,  
                                                         decay_rate=decay_rate, 
                                                         staircase=True)
             
@@ -78,12 +78,12 @@ class Trainer_bn(object):
         
         return optimizer
         
-    def _initialize(self, training_iters, output_path, restore, prediction_path):
+    def _initialize(self, training_iters_per_epoch, output_path, restore, prediction_path):
         global_step = tf.Variable(0)
         logging.getLogger().setLevel(logging.INFO)
 
         # get optimizer
-        self.optimizer = self._get_optimizer(training_iters, global_step)
+        self.optimizer = self._get_optimizer(training_iters_per_epoch, global_step)
         init = tf.global_variables_initializer()
 
         # get validation_path
@@ -107,7 +107,7 @@ class Trainer_bn(object):
         
         return init
 
-    def train(self, data_provider, output_path, valid_provider, valid_size, training_iters_per_cube=3087, num_cubes=10, epochs=1000, dropout=0.75, display_step=1, save_epoch=50, restore=False, write_graph=False, prediction_path='validation'):
+    def train(self, data_provider, output_path, valid_provider, valid_size, training_iters_per_epoch=300, num_cubes=9, epochs=1000, dropout=0.75, display_step=1, save_epoch=50, restore=False, write_graph=False, prediction_path='validation'):
         """
         Lauches the training process
         
@@ -115,7 +115,7 @@ class Trainer_bn(object):
         :param output_path: path where to store checkpoints
         :param valid_provider: data provider for the validation dataset
         :param valid_size: batch size for validation provider
-        :param training_iters: number of training mini batch iteration
+        :param training_iters_per_epoch: number of training mini batch iteration
         :param epochs: number of epochs
         :param dropout: dropout probability
         :param display_step: number of steps till outputting stats
@@ -125,8 +125,8 @@ class Trainer_bn(object):
         """
         
         # initialize the training process.
-        training_iters = training_iters_per_cube * num_cubes
-        init = self._initialize(training_iters, output_path, restore, prediction_path)
+        training_iters = training_iters_per_epoch
+        init = self._initialize(training_iters_per_epoch, output_path, restore, prediction_path)
 
         # create output path
         directory = os.path.join(output_path, "final/")
@@ -152,54 +152,40 @@ class Trainer_bn(object):
             summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
             logging.info("Start optimization")
 
-            # select validation dataset
-            #fix=True
-            #valid_x, valid_y = valid_provider(fix, valid_size, 0, 0)
-            valid_x = valid_provider._get_patch_cube(0, "data")[0:valid_size,:,:,:,:] #(N, D, H, W, C)
-            valid_y = valid_provider._get_patch_cube(0, "truths")[0:valid_size,:,:,:,:]
-            print(valid_provider._get_patch_cube(0, "data").shape)
-            print(valid_x.shape)
-            print(valid_y.shape)
-            print("1111111111111111111111111111111111111111")
+            valid_x, valid_y = valid_provider(valid_size, fix=True)
             util.save_mat(valid_y, "%s/%s.mat"%(self.prediction_path, 'origin_y'))
             util.save_mat(valid_x, "%s/%s.mat"%(self.prediction_path, 'origin_x'))
+            
+            print("validation shape: {}".format(valid_x.shape))
 
             for epoch in range(epochs):
                 total_loss = 0
                 
-                for num in range(num_cubes):                    
-                    print("Get the {}th cube!!!!!".format(num))
-                    all_patches_data = data_provider._get_patch_cube(num, "data") # (batch_size, 32, 32, 32, 1)
-                    all_patches_truths = data_provider._get_patch_cube(num, "truths")
-                    
-                    for itr in range(training_iters_per_cube):
-                        batch_x = all_patches_data[itr * self.batch_size : (itr+1) * self.batch_size]
-                        batch_y = all_patches_truths[itr * self.batch_size : (itr+1) * self.batch_size]
-                        print("Cube{}, {}th batch{} ".format(num, itr, batch_x.shape))
-
-                        # Run optimization op (backprop)
-                        _, loss, lr, avg_psnr = sess.run([self.optimizer,
+                for step in range((epoch*training_iters_per_epoch), ((epoch+1)*training_iters_per_epoch)):
+                    batch_x, batch_y = data_provider(self.batch_size)
+                    # Run optimization op (backprop)
+                    _, loss, lr, avg_psnr = sess.run([self.optimizer,
                                                         self.net.loss, 
                                                         self.learning_rate_node, 
                                                         self.net.avg_psnr], 
-                                                        feed_dict={self.net.x: batch_x,    #(N, D, H, W, C) 
-                                                                    self.net.y: batch_y,   #(N, D, H, W, C)
+                                                        feed_dict={self.net.x: batch_x,
+                                                                    self.net.y: batch_y,
                                                                     self.net.keep_prob: dropout,
                                                                     self.net.phase: True})
                         
-                        step = epoch*num_cubes*training_iters_per_cube + num*training_iters_per_cube + itr
-                        if step % display_step == 0:
-                            logging.info("Iter {:} (Before training on the batch) Minibatch MSE= {:.4f}, Minibatch Avg PSNR= {:.4f}".format(step, loss, avg_psnr))
-                            self.output_minibatch_stats(sess, summary_writer, step, batch_x, batch_y)
                         
-                        total_loss += loss
+                    if step % display_step == 0:
+                        logging.info("Iter {:} (Before training on the batch) Minibatch MSE= {:.4f}, Minibatch Avg PSNR= {:.4f}".format(step, loss, avg_psnr))
+                        self.output_minibatch_stats(sess, summary_writer, step, batch_x, batch_y)
+                        
+                    total_loss += loss
 
-                        self.record_summary(summary_writer, 'training_loss', loss, step)
-                        self.record_summary(summary_writer, 'training_avg_psnr', avg_psnr, step)
+                    self.record_summary(summary_writer, 'training_loss', loss, step)
+                    self.record_summary(summary_writer, 'training_avg_psnr', avg_psnr, step)
                         
                      
                 # output statistics for epoch
-                self.output_epoch_stats(epoch, total_loss, training_iters, lr)
+                self.output_epoch_stats(epoch, total_loss, training_iters_per_epoch, lr)
                 self.output_valstats(sess, summary_writer, step, valid_x, valid_y, "epoch_%s"%epoch, store_img=False)
 
                 if epoch % save_epoch == 0:
@@ -215,8 +201,8 @@ class Trainer_bn(object):
             
             return save_path
     
-    def output_epoch_stats(self, epoch, total_loss, training_iters, lr):
-        logging.info("Epoch {:}, Average MSE: {:.4f}, learning rate: {:.4f}".format(epoch, (total_loss / training_iters), lr))
+    def output_epoch_stats(self, epoch, total_loss, training_iters_per_epoch, lr):
+        logging.info("Epoch {:}, Average MSE: {:.4f}, learning rate: {:.4f}".format(epoch, (total_loss / training_iters_per_epoch), lr))
     
     def output_minibatch_stats(self, sess, summary_writer, step, batch_x, batch_y):
         # Calculate batch loss and accuracy
